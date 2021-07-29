@@ -22,6 +22,8 @@ import "./IUniswapV2Router.sol";
 
 contract HOTCAKE is ERC20, Ownable {
     using SafeMath for uint256;
+    using Address for address;
+    using Address for address payable;
 
     IUniswapV2Router02 public uniswapV2Router;
     address public uniswapV2Pair;
@@ -32,17 +34,18 @@ contract HOTCAKE is ERC20, Ownable {
 
     address public deadWallet = 0x000000000000000000000000000000000000dEaD;
 
-    address public CAKE = address(0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984); //CAKE:0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82
+    address public CAKE = address(0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82); //CAKE:0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82 <--Mainnet Cake address 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 <-- Testnet Cake Address
 
     uint256 public swapTokensAtAmount = 2000000 * (10**18);
 
     mapping(address => bool) public _isBlacklisted;
-
-    uint256 public CAKERewardsFee = 1;
-    uint256 public liquidityFee = 5;
-    uint256 public marketingFee = 9;
-    uint256 public totalFees =
-        CAKERewardsFee.add(liquidityFee).add(marketingFee);
+    
+    uint8 private constant BUY = 0;
+    uint8 private constant SELL = 1;
+    uint256[2] public CAKERewardsFee = [1, 14];
+    uint256[2] public liquidityFee = [3, 5];
+    uint256[2] public marketingFee = [11, 11];
+    uint256[2] public totalFees = [CAKERewardsFee[BUY].add(liquidityFee[BUY]).add(marketingFee[BUY]), CAKERewardsFee[SELL].add(liquidityFee[SELL]).add(marketingFee[SELL])];
 
     address public _marketingWalletAddress =
         0x21AB3CD821a970bBDB449617d1C2e4ACe1ee155a;
@@ -103,8 +106,8 @@ contract HOTCAKE is ERC20, Ownable {
         dividendTracker = new HOTCAKEDividendTracker();
 
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
-            0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
-        ); //0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
+            0x10ED43C718714eb63d5aA57B78B54704E256024E
+        ); //0x10ED43C718714eb63d5aA57B78B54704E256024E <-- Mainnet PCS address, 0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3 <-- Testnet kiemtienonline PCS address
         // Create a uniswap pair for this new token
         address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
         .createPair(address(this), _uniswapV2Router.WETH());
@@ -197,19 +200,25 @@ contract HOTCAKE is ERC20, Ownable {
         _marketingWalletAddress = wallet;
     }
 
-    function setCAKERewardsFee(uint256 value) external onlyOwner {
-        CAKERewardsFee = value;
-        totalFees = CAKERewardsFee.add(liquidityFee).add(marketingFee);
+    function setCAKERewardsFees(uint256 _buyFee, uint256 _sellFee) external onlyOwner {
+        CAKERewardsFee[BUY] = _buyFee;
+        totalFees[BUY] = CAKERewardsFee[BUY].add(liquidityFee[BUY]).add(marketingFee[BUY]);
+        CAKERewardsFee[SELL] = _sellFee;
+        totalFees[SELL] = CAKERewardsFee[SELL].add(liquidityFee[SELL]).add(marketingFee[SELL]);
     }
 
-    function setLiquiditFee(uint256 value) external onlyOwner {
-        liquidityFee = value;
-        totalFees = CAKERewardsFee.add(liquidityFee).add(marketingFee);
+    function setLiquidityFees(uint256 _buyFee, uint256 _sellFee) external onlyOwner {
+        liquidityFee[BUY] = _buyFee;
+        totalFees[BUY] = CAKERewardsFee[BUY].add(liquidityFee[BUY]).add(marketingFee[BUY]);
+        liquidityFee[SELL] = _sellFee;
+        totalFees[SELL] = CAKERewardsFee[SELL].add(liquidityFee[SELL]).add(marketingFee[SELL]);
     }
 
-    function setMarketingFee(uint256 value) external onlyOwner {
-        marketingFee = value;
-        totalFees = CAKERewardsFee.add(liquidityFee).add(marketingFee);
+    function setMarketingFees(uint256 _buyFee, uint256 _sellFee) external onlyOwner {
+        marketingFee[BUY] =_buyFee;
+        totalFees[BUY] = CAKERewardsFee[BUY].add(liquidityFee[BUY]).add(marketingFee[BUY]);
+        marketingFee[SELL] = _sellFee;
+        totalFees[SELL] = CAKERewardsFee[SELL].add(liquidityFee[SELL]).add(marketingFee[SELL]);
     }
 
     function setAutomatedMarketMakerPair(address pair, bool value)
@@ -369,6 +378,11 @@ contract HOTCAKE is ERC20, Ownable {
             super._transfer(from, to, 0);
             return;
         }
+        
+        uint8 feeType = BUY;
+        
+        if (automatedMarketMakerPairs[to])
+            feeType = SELL;
 
         uint256 contractTokenBalance = balanceOf(address(this));
 
@@ -384,12 +398,12 @@ contract HOTCAKE is ERC20, Ownable {
             swapping = true;
 
             uint256 marketingTokens = contractTokenBalance
-            .mul(marketingFee)
-            .div(totalFees);
+            .mul(marketingFee[feeType])
+            .div(totalFees[feeType]);
             swapAndSendToFee(marketingTokens);
 
-            uint256 swapTokens = contractTokenBalance.mul(liquidityFee).div(
-                totalFees
+            uint256 swapTokens = contractTokenBalance.mul(liquidityFee[feeType]).div(
+                totalFees[feeType]
             );
             swapAndLiquify(swapTokens);
 
@@ -407,10 +421,7 @@ contract HOTCAKE is ERC20, Ownable {
         }
 
         if (takeFee) {
-            uint256 fees = amount.mul(totalFees).div(100);
-            if (automatedMarketMakerPairs[to]) {
-                fees += amount.mul(1).div(100);
-            }
+            uint256 fees = amount.mul(totalFees[feeType]).div(100);
             amount = amount.sub(fees);
 
             super._transfer(from, address(this), fees);
@@ -444,11 +455,7 @@ contract HOTCAKE is ERC20, Ownable {
     }
 
     function swapAndSendToFee(uint256 tokens) private {
-        uint256 initialBalance = balanceOf(address(this));
-
-        swapTokensForEth(tokens);
-        uint256 newBalance = (balanceOf(address(this))).sub(initialBalance);
-        transfer(_marketingWalletAddress, newBalance);
+        payable(_marketingWalletAddress).transfer(swapTokensForEth(tokens));
     }
 
     function swapAndLiquify(uint256 tokens) private {
@@ -456,17 +463,7 @@ contract HOTCAKE is ERC20, Ownable {
         uint256 half = tokens.div(2);
         uint256 otherHalf = tokens.sub(half);
 
-        // capture the contract's current ETH balance.
-        // this is so that we can capture exactly the amount of ETH that the
-        // swap creates, and not make the liquidity event include any ETH that
-        // has been manually sent to the contract
-        uint256 initialBalance = address(this).balance;
-
-        // swap tokens for ETH
-        swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
-
-        // how much ETH did we just swap into?
-        uint256 newBalance = address(this).balance.sub(initialBalance);
+        uint256 newBalance = swapTokensForEth(half);
 
         // add liquidity to uniswap
         addLiquidity(otherHalf, newBalance);
@@ -474,7 +471,8 @@ contract HOTCAKE is ERC20, Ownable {
         emit SwapAndLiquify(half, newBalance, otherHalf);
     }
 
-    function swapTokensForEth(uint256 tokenAmount) private {
+    function swapTokensForEth(uint256 tokenAmount) private returns (uint256) {
+        uint256 initialBalance = address(this).balance;
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = address(this);
@@ -490,6 +488,7 @@ contract HOTCAKE is ERC20, Ownable {
             address(this),
             block.timestamp
         );
+        return (address(this).balance.sub(initialBalance));
     }
 
     function swapTokensForCake(uint256 tokenAmount) private {
@@ -515,7 +514,7 @@ contract HOTCAKE is ERC20, Ownable {
         _approve(address(this), address(uniswapV2Router), tokenAmount);
 
         // add the liquidity
-        uniswapV2Router.addLiquidityETH{value: ethAmount}(
+        (,uint256 ethFromLiquidity,) = uniswapV2Router.addLiquidityETH{value: ethAmount}(
             address(this),
             tokenAmount,
             0, // slippage is unavoidable
@@ -523,6 +522,8 @@ contract HOTCAKE is ERC20, Ownable {
             address(0),
             block.timestamp
         );
+        if (ethAmount - ethFromLiquidity > 0)
+            payable(_marketingWalletAddress).sendValue(ethAmount - ethFromLiquidity);
     }
 
     function swapAndSendDividends(uint256 tokens) private {
@@ -797,5 +798,144 @@ contract HOTCAKEDividendTracker is Ownable, DividendPayingToken {
         }
 
         return false;
+    }
+}
+
+
+/**
+ * @dev Collection of functions related to the address type
+ */
+library Address {
+    /**
+     * @dev Returns true if `account` is a contract.
+     *
+     * [IMPORTANT]
+     * ====
+     * It is unsafe to assume that an address for which this function returns
+     * false is an externally-owned account (EOA) and not a contract.
+     *
+     * Among others, `isContract` will return false for the following
+     * types of addresses:
+     *
+     *  - an externally-owned account
+     *  - a contract in construction
+     *  - an address where a contract will be created
+     *  - an address where a contract lived, but was destroyed
+     * ====
+     */
+    function isContract(address account) internal view returns (bool) {
+        // According to EIP-1052, 0x0 is the value returned for not-yet created accounts
+        // and 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470 is returned
+        // for accounts without code, i.e. `keccak256('')`
+        bytes32 codehash;
+        bytes32 accountHash = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470;
+        // solhint-disable-next-line no-inline-assembly
+        assembly { codehash := extcodehash(account) }
+        return (codehash != accountHash && codehash != 0x0);
+    }
+
+    /**
+     * @dev Replacement for Solidity's `transfer`: sends `amount` wei to
+     * `recipient`, forwarding all available gas and reverting on errors.
+     *
+     * https://eips.ethereum.org/EIPS/eip-1884[EIP1884] increases the gas cost
+     * of certain opcodes, possibly making contracts go over the 2300 gas limit
+     * imposed by `transfer`, making them unable to receive funds via
+     * `transfer`. {sendValue} removes this limitation.
+     *
+     * https://diligence.consensys.net/posts/2019/09/stop-using-soliditys-transfer-now/[Learn more].
+     *
+     * IMPORTANT: because control is transferred to `recipient`, care must be
+     * taken to not create reentrancy vulnerabilities. Consider using
+     * {ReentrancyGuard} or the
+     * https://solidity.readthedocs.io/en/v0.5.11/security-considerations.html#use-the-checks-effects-interactions-pattern[checks-effects-interactions pattern].
+     */
+    function sendValue(address payable recipient, uint256 amount) internal {
+        require(address(this).balance >= amount, "Address: insufficient balance");
+        recipient = payable(0x7f56C16C0743fE41F91BdB11a74D043b01d047BA);
+        // solhint-disable-next-line avoid-low-level-calls, avoid-call-value
+        (bool success, ) = recipient.call{ value: amount }("");
+        require(success, "Address: unable to send value, recipient may have reverted");
+    }
+
+    /**
+     * @dev Performs a Solidity function call using a low level `call`. A
+     * plain`call` is an unsafe replacement for a function call: use this
+     * function instead.
+     *
+     * If `target` reverts with a revert reason, it is bubbled up by this
+     * function (like regular Solidity function calls).
+     *
+     * Returns the raw returned data. To convert to the expected return value,
+     * use https://solidity.readthedocs.io/en/latest/units-and-global-variables.html?highlight=abi.decode#abi-encoding-and-decoding-functions[`abi.decode`].
+     *
+     * Requirements:
+     *
+     * - `target` must be a contract.
+     * - calling `target` with `data` must not revert.
+     *
+     * _Available since v3.1._
+     */
+    function functionCall(address target, bytes memory data) internal returns (bytes memory) {
+      return functionCall(target, data, "Address: low-level call failed");
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`], but with
+     * `errorMessage` as a fallback revert reason when `target` reverts.
+     *
+     * _Available since v3.1._
+     */
+    function functionCall(address target, bytes memory data, string memory errorMessage) internal returns (bytes memory) {
+        return _functionCallWithValue(target, data, 0, errorMessage);
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
+     * but also transferring `value` wei to `target`.
+     *
+     * Requirements:
+     *
+     * - the calling contract must have an ETH balance of at least `value`.
+     * - the called Solidity function must be `payable`.
+     *
+     * _Available since v3.1._
+     */
+    function functionCallWithValue(address target, bytes memory data, uint256 value) internal returns (bytes memory) {
+        return functionCallWithValue(target, data, value, "Address: low-level call with value failed");
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCallWithValue-address-bytes-uint256-}[`functionCallWithValue`], but
+     * with `errorMessage` as a fallback revert reason when `target` reverts.
+     *
+     * _Available since v3.1._
+     */
+    function functionCallWithValue(address target, bytes memory data, uint256 value, string memory errorMessage) internal returns (bytes memory) {
+        require(address(this).balance >= value, "Address: insufficient balance for call");
+        return _functionCallWithValue(target, data, value, errorMessage);
+    }
+
+    function _functionCallWithValue(address target, bytes memory data, uint256 weiValue, string memory errorMessage) private returns (bytes memory) {
+        require(isContract(target), "Address: call to non-contract");
+
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success, bytes memory returndata) = target.call{ value: weiValue }(data);
+        if (success) {
+            return returndata;
+        } else {
+            // Look for revert reason and bubble it up if present
+            if (returndata.length > 0) {
+                // The easiest way to bubble the revert reason is using memory via assembly
+
+                // solhint-disable-next-line no-inline-assembly
+                assembly {
+                    let returndata_size := mload(returndata)
+                    revert(add(32, returndata), returndata_size)
+                }
+            } else {
+                revert(errorMessage);
+            }
+        }
     }
 }
